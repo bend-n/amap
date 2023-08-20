@@ -1,7 +1,7 @@
 [package]
 name = "amap"
-version = "0.1.0"
-author = ["bend-n <bend.n@outlook.com>"]
+version = "0.1.1"
+authors = ["bend-n <bend.n@outlook.com>"]
 description = "define `[Option<T>; N]` easily"
 edition = "2021"
 repository = "https://github.com/bend-n/amap.git"
@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 quote = "1.0.32"
-syn = "2.0.15"
+syn = { version = "2.0.15", features = ["full"] }
 
 [lib]
 proc_macro = true
