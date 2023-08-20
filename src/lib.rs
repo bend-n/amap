@@ -146,8 +146,8 @@ impl Parse for Map {
 pub fn amap(input: TokenStream) -> TokenStream {
     let map = parse_macro_input!(input as Map);
     let map = map.0.iter().map(|index| match index {
-        Some(v) => quote!(Some(#v)),
-        None => quote!(None),
+        Some(v) => quote!(::core::option::Option::Some(#v)),
+        None => quote!(::core::option::Option::None),
     });
     quote! {
         [#(#map), *]
