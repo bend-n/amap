@@ -1,15 +1,17 @@
 [package]
 name = "amap"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["bend-n <bend.n@outlook.com>"]
 description = "define `[Option<T>; N]` easily"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/bend-n/amap.git"
 license = "MIT"
 
 [dependencies]
+itertools = "0.14.0"
+proc-macro2 = "1.0.101"
 quote = "1.0.32"
 syn = { version = "2.0.15", features = ["full"] }
 
 [lib]
-proc_macro = true
+proc-macro = true
