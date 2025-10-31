@@ -2,7 +2,7 @@ use itertools::Itertools;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{
-    Error, Expr, Lit, Pat, PatConst, Stmt, Token,
+    Error, Expr, Lit, Pat, PatConst, PatWild, Stmt, Token,
     parse::{self, Parse, ParseStream},
     parse_macro_input,
     punctuated::Punctuated,
@@ -11,16 +11,32 @@ use syn::{
 
 #[derive(Clone)]
 struct Index {
-    indices: Vec<Expr>,
+    indices: Indices,
     value: Expr,
 }
-fn indices(index: &Pat) -> syn::Result<Vec<Expr>> {
+#[derive(Clone)]
+enum Indices {
+    Normal(Vec<Expr>),
+    Wild(PatWild),
+}
+fn indices(index: &Pat) -> syn::Result<Indices> {
     match index {
         Pat::Lit(v) => match &v.lit {
             Lit::Int(_) => Ok(vec![v.clone().into()]),
             _ => Err(Error::new_spanned(v, "must be numeric literal"))?,
         },
-        Pat::Or(v) => v.cases.iter().map(indices).flatten_ok().collect(),
+        Pat::Or(v) => v
+            .cases
+            .iter()
+            .map(indices)
+            .map(|x| {
+                x.and_then(|x| match x {
+                    Indices::Normal(x) => Ok(x),
+                    Indices::Wild(x) => Err(Error::new_spanned(x, "cant have _ in |")),
+                })
+            })
+            .flatten_ok()
+            .collect(),
         Pat::Range(r) => {
             let s = r.span();
             let r = r.clone();
@@ -71,11 +87,13 @@ fn indices(index: &Pat) -> syn::Result<Vec<Expr>> {
                 })
             }])
         }
+        Pat::Wild(x) => return Ok(Indices::Wild(x.clone())),
         _ => Err(Error::new(
             index.span(),
-            "pattern must be literal(5) | or(5 | 4) | range(4..5) | const { .. }",
+            "pattern must be literal(5) | or(5 | 4) | range(4..5) | const { .. } | _",
         ))?,
     }
+    .map(Indices::Normal)
 }
 
 impl Parse for Index {
@@ -103,28 +121,45 @@ impl Parse for Map {
 
 impl Map {
     fn into(self, d: TokenStream, f: impl Fn(&Expr) -> TokenStream + Copy) -> TokenStream {
+        let wild = self.0.iter().find_map(|x| match x.indices {
+            Indices::Normal(_) => None,
+            Indices::Wild(_) => Some(x.value.to_token_stream()),
+        });
+        let w = wild.is_some();
         let map = self
             .0
             .into_iter()
             .zip(1..)
             .flat_map(|(Index { indices, value }, i)| {
-                indices.into_iter().map(move |x| {
-                    let s = format!(
-                        "duplicate / overlapping key @ pattern `{}` (#{i})",
-                        x.to_token_stream()
-                            .to_string()
-                            .replace('{', "{{")
-                            .replace('}', "}}")
-                    );
-                    let value = f(&value);
-                    quote! {{
-                        let (index, value) = { let (__ඞඞ, __set) = ((), ()); (#x, #value) };
-                        assert!(!__set[index], #s);
-                        __set[index] = true;
-                        __ඞඞ[index] = value;
-                    }}
+                match indices {
+                    Indices::Normal(x) => x,
+                    _ => vec![],
+                }
+                .into_iter()
+                .map({
+                    move |x| {
+                        let s = format!(
+                            "duplicate / overlapping key @ pattern `{}` (#{i})",
+                            x.to_token_stream()
+                                .to_string()
+                                .replace('{', "{{")
+                                .replace('}', "}}")
+                        );
+                        let value = if w {
+                            value.to_token_stream()
+                        } else {
+                            f(&value)
+                        };
+                        quote! {{
+                            let (index, value) = { let (__ඞඞ, __set) = ((), ()); (#x, #value) };
+                            assert!(!__set[index], #s);
+                            __set[index] = true;
+                            __ඞඞ[index] = value;
+                        }}
+                    }
                 })
             });
+        let d = wild.unwrap_or(d);
         quote! {{
             let mut __ඞඞ = [#d; _];
             const fn steal<const N:usize, T>(_: &[T; N]) -> [bool; N] { [false; N] }
@@ -154,6 +189,8 @@ impl Map {
 /// };
 /// assert_eq!(X[44].as_ref().unwrap(), &Y::B);
 /// ```
+///
+/// Produces a `[T; N]` if a `_` branch is included.
 #[proc_macro]
 pub fn amap(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     parse_macro_input!(input as Map)

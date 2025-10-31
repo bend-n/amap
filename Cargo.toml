@@ -1,6 +1,6 @@
 [package]
 name = "amap"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["bend-n <bend.n@outlook.com>"]
 description = "define `[Option<T>; N]` easily"
 edition = "2024"
